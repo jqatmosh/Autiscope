@@ -22,15 +22,6 @@ class GameEntryActivity : AppCompatActivity() {
                 add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
         }.toTypedArray()
-//    private val requestPermissionLauncher =
-//        registerForActivityResult(
-//            ActivityResultContracts.RequestMultiplePermissions()
-//        ) { permissions ->
-//            val granted = permissions.entries.all { entry -> entry.value }
-//            if (granted) {
-//                moveToQuestions()
-//            }
-//        }
 
 
     private val requestPermissionLauncher =
@@ -77,32 +68,17 @@ class GameEntryActivity : AppCompatActivity() {
 
     private fun onNextBtnClick() {
         requestCameraAudioPermissions()
+        binding.nextButton.isEnabled = false
 
     }
 
-    // TODO:: JULIA - fix this
     private fun requestCameraAudioPermissions() {
-//        moveToQuestions()
-//        return
         when {
-            ((ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-                    + ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-                    + ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE
-            ))) == PackageManager.PERMISSION_GRANTED -> {
+            allPermissionsGranted() -> {
                 moveToQuestions()
                 // You can use the API that requires the permission.
             }
-//            ActivityCompat.shouldShowRequestPermissionRationale(
-//                this, permissions) -> {
-//                // In an educational UI, explain to the user why your app requires this
-//                // permission for a specific feature to behave as expected, and what
-//                // features are disabled if it's declined. In this UI, include a
-//                // "cancel" or "no thanks" button that lets the user continue
-//                // using your app without granting the permission.
-//                showInContextUI(...)
-//            }
+
             else -> {
                 // You can directly ask for the permission.
                 // The registered ActivityResultCallback gets the result of this request.
