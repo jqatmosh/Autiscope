@@ -89,7 +89,13 @@ class GameEntryActivity : AppCompatActivity() {
 
     private fun moveToQuestions() {
         QuestionBaseActivity.openIntent(this)
+        finish()
 
+    }
+
+    override fun onResume() {
+        super.onResume()
+        binding.nextButton.isEnabled = true
     }
 
 }

@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.CountDownTimer
 import android.provider.MediaStore
 import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
@@ -73,7 +74,48 @@ class QuestionBaseActivity : AppCompatActivity() {
 
     private val cameraCapabilities = mutableListOf<CameraCapability>()
 
-    init {
+    private var recorder: ScrCast? = null
+
+
+    companion object {
+        val TAG = QuestionBaseActivity::class.java.toString()
+        private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
+
+        fun openIntent(context: Context) {
+            val intent = Intent(context, QuestionBaseActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            context.startActivity(intent)
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityQuestionBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        initialize()
+    }
+
+    private fun initialize() {
+        initEnumerationDeferred()
+        lastQuestion = 0
+        questionsArray = Question.getQuestions()
+        outputDirectory = getOutputDirectory()
+        cameraExecutor = Executors.newSingleThreadExecutor()
+        setupRecorder()
+        startScreenRecord()
+        this.lifecycleScope.launch {
+            if (enumerationDeferred != null) {
+                enumerationDeferred!!.await()
+                enumerationDeferred = null
+                startCamera()
+            }
+        }
+
+    }
+
+
+    private fun initEnumerationDeferred() {
         enumerationDeferred = lifecycleScope.async {
             whenCreated {
                 val provider = ProcessCameraProvider.getInstance(this@QuestionBaseActivity).await()
@@ -102,82 +144,6 @@ class QuestionBaseActivity : AppCompatActivity() {
                 }
             }
         }
-    }
-
-    var recorder: ScrCast? = null
-
-//    by lazy {
-//        ScrCast.use(this).apply {
-//            options {
-//                video {
-//                    maxLengthSecs = 360
-//                }
-//                storage {
-//                    directoryName = "autiscope"
-//                }
-//                notification {
-//                    icon = resources.getDrawable(R.drawable.ic_camera, null).toBitmap()
-//                    channel {
-//                        id = "1337"
-//                        name = "Recording Service"
-//                    }
-//                    showStop = true
-//                    showPause = true
-//                    showTimer = true
-//                }
-//
-//
-//                moveTaskToBack = false
-//                stopOnScreenOff = true
-//                startDelayMs = 5_000
-//            }
-//
-//            // ScrCast supports running your own notifications completely
-//            // simply provide a NotificationProvider
-//            //
-//            //setNotificationProvider(SimpleNotificationProvider(this@MainActivity))
-//        }
-//    }
-
-    companion object {
-        val TAG = QuestionBaseActivity::class.java.toString()
-        private const val FILENAME_FORMAT = "yyyy-MM-dd-HH-mm-ss-SSS"
-
-        fun openIntent(context: Context) {
-            val intent = Intent(context, QuestionBaseActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-            }
-            context.startActivity(intent)
-        }
-    }
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        binding = ActivityQuestionBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        initialize()
-    }
-
-    private fun initialize() {
-        questionsArray = Question.getQuestions()
-        outputDirectory = getOutputDirectory()
-        cameraExecutor = Executors.newSingleThreadExecutor()
-        setupRecorder()
-        startScreenRecord()
-        this.lifecycleScope.launch {
-            if (enumerationDeferred != null) {
-                enumerationDeferred!!.await()
-                enumerationDeferred = null
-            }
-            startCamera()
-            captureVideo()
-        }
-
-
-        if (questionsArray.isNotEmpty()) {
-            bindQuestionView()
-        }
-
     }
 
     private fun setupRecorder() {
@@ -221,6 +187,15 @@ class QuestionBaseActivity : AppCompatActivity() {
         // listen for state changes
         recorder?.setRecordingCallback(object : RecordingCallbacks {
             override fun onStateChange(state: RecordingState) {
+                if (state == RecordingState.Recording || state is RecordingState.Idle) {
+                    val isRecording = state == RecordingState.Recording
+                    if (isRecording) {
+                        this@QuestionBaseActivity.lifecycleScope.launch {
+                            captureVideo()
+                        }
+                        bindQuestionView()
+                    }
+                }
             }
 
             override fun onRecordingFinished(file: File) {
@@ -253,6 +228,8 @@ class QuestionBaseActivity : AppCompatActivity() {
     private suspend fun startCamera() {
         val cameraProvider = ProcessCameraProvider.getInstance(this).await()
 
+        binding.viewFinder.visibility = View.VISIBLE
+
         val preview = Preview.Builder().build().also {
             it.setSurfaceProvider(binding.viewFinder.surfaceProvider)
         }
@@ -282,6 +259,8 @@ class QuestionBaseActivity : AppCompatActivity() {
         if (currentRecording != null) {
             currentRecording.stop()
             recording = null
+            cameraExecutor.shutdown()
+            binding.viewFinder.visibility = View.GONE
         }
 
     }
@@ -340,6 +319,17 @@ class QuestionBaseActivity : AppCompatActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        stopRecordings()
+
+    }
+
+    override fun onStop() {
+        super.onStop()
+        finish()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         cameraExecutor.shutdown()
@@ -353,10 +343,23 @@ class QuestionBaseActivity : AppCompatActivity() {
             mediaDir else filesDir
     }
 
+    private fun stopRecordings() {
+        stopRecording()
+        stopScreenRecord()
+        if (supportFragmentManager.findFragmentById(R.id.fragment_container) != null) {
+            supportFragmentManager.findFragmentById(R.id.fragment_container)?.let {
+                supportFragmentManager.beginTransaction().remove(it).commit()
+            }
+        }
+
+
+    }
+
     private fun bindQuestionView() {
         if (lastQuestion >= questionsArray.size) {
-            stopRecording()
-            stopScreenRecord()
+            stopRecordings()
+            FinishGameActivity.openIntent(this)
+            finish()
             return
         }
         val question = questionsArray[lastQuestion]
@@ -433,14 +436,20 @@ class QuestionBaseActivity : AppCompatActivity() {
             override fun onFinish() {
                 onTimeEnded()
                 cancel()
+                binding.timerText.visibility = View.GONE
             }
-        }.also { it.start() }
+        }.also {
+            it.start()
+        }
     }
 
     private fun updateTimerText(millisUntilFinished: Long) {
         val secondsUntilFinished = millisUntilFinished / 1000
         val seconds = secondsUntilFinished % 60
         val minutes = (secondsUntilFinished - seconds) / 60
+        if (binding.timerText.visibility != View.VISIBLE) {
+            binding.timerText.visibility = View.VISIBLE
+        }
         binding.timerText.text = getString(
             R.string.timer_format,
             "$minutes".padStart(2, '0'),
@@ -459,10 +468,6 @@ class QuestionBaseActivity : AppCompatActivity() {
 
 
     private fun replaceFragment(target: Fragment, tagName: String, addToBackStack: Boolean) {
-//        val slideTransition = Slide(Gravity.LEFT)
-//        slideTransition.duration = 300
-//        target.enterTransition = slideTransition
-
         if (!isFinishing) {
             val fragmentManager = supportFragmentManager
             val transaction = fragmentManager.beginTransaction()

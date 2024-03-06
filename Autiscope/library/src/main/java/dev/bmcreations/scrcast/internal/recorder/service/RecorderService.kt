@@ -40,7 +40,7 @@ class RecorderService : Service() {
 
     private val binder = LocalBinder()
 
-    private lateinit var notificationProvider: NotificationProvider
+    private var notificationProvider: NotificationProvider? = null
 
     private val pauseResumeHandler = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -173,7 +173,7 @@ class RecorderService : Service() {
             }
             state = RecordingState.Paused
 
-            notificationProvider.update(state)
+            notificationProvider?.update(state)
         }
     }
 
@@ -184,7 +184,7 @@ class RecorderService : Service() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                     mediaRecorder?.resume()
                     state = RecordingState.Recording
-                    notificationProvider.update(state)
+                    notificationProvider?.update(state)
                 }
             }
 
@@ -210,8 +210,8 @@ class RecorderService : Service() {
     private fun recordInternal(code: Int, data: Intent) {
         GlobalScope.launch(Dispatchers.Main) {
             startForeground(
-                notificationProvider.getNotificationId(),
-                notificationProvider.get(state)
+                notificationProvider?.getNotificationId() ?: 0,
+                notificationProvider?.get(state)
             )
             mediaProjection = projectionManager.getMediaProjection(code, data)
 
@@ -234,7 +234,7 @@ class RecorderService : Service() {
             try {
                 mediaRecorder?.start()
                 state = RecordingState.Recording
-                notificationProvider.update(state)
+                notificationProvider?.update(state)
             } catch (e: Exception) {
                 stopRecording(e)
             }
